@@ -1,0 +1,31 @@
+name: ci
+on: [push, pull_request]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: deps
+        run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev python3-numpy
+      - name: algo build + unit tests
+        run: |
+          make -C algo CXX=g++ NEON=
+          (cd algo && ./test_algo)   # dlopen 用相对路径，须在库目录内运行
+      - name: engine build (real lib + mock)
+        run: |
+          make -C engine ARCHFLAGS= ALGO_DIR=$PWD/algo
+          make -C engine ARCHFLAGS= mock
+      - name: plugin build
+        run: make -C plugin
+      - name: engine simulate smoke (fifo ipc)
+        run: |
+          cd engine
+          python3 gen_test_wav.py
+          timeout -s INT 12 ./voice_engine --ipc fifo --simulate-capture test4ch16k.wav --stats-interval 4 2>&1 | tee /tmp/smoke.log || true
+          grep -q "aec_blocks=[1-9]" /tmp/smoke.log
+          grep -q "rtf=0\." /tmp/smoke.log
+      - name: mock smoke
+        run: |
+          cd engine
+          timeout -s INT 8 ./voice_engine_mock --ipc fifo --simulate-capture test4ch16k.wav --stats-interval 4 2>&1 | tail -3 || true

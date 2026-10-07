@@ -1,0 +1,7 @@
+# 构建产物
+*.o *.a *.so test_algo voice_engine voice_engine_mock
+# 测试素材（由 gen_test_wav.py / acoustic 脚本生成）
+*.wav
+# 运行产物
+dumps/ *.log
+.DS_Store __pycache__/
