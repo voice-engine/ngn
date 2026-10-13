@@ -4,20 +4,25 @@
 #   libvoice_algo.so  共享库（引擎 dlopen / 直接链）
 #   libvoice_algo.a   静态库
 #   test_algo         板上单测（合成数据，exit 0 = 全部通过）
+#   test_gtcrn        GTCRN 降噪 wav 进出 + 逐帧计时（对拍工具）
 #
 # NEON：-mcpu=cortex-a7 -mfpu=neon-vfpv4（H2+/H3 四核 Cortex-A7，
 # NEONv2 + VFPv4 硬浮点；Debian armhf 默认 hard ABI）。
 # `make neon-stat` 输出开/不开 -mcpu 的向量指令条数对比（objdump -d 抽查）。
+#
+# gtcrn_weights.c 由 tools/export_gtcrn_weights.py 生成（勿手改）。
 
 CXX      ?= g++
+CC       ?= gcc
 AR       ?= ar
 BASEFLAGS ?= -std=c++17 -O3 -Wall -Wextra -fPIC
 NEON     ?= -mcpu=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard
 CXXFLAGS := $(BASEFLAGS) $(NEON)
+CFLAGS   := -O3 -Wall -fPIC $(NEON)
 
-OBJS = aec_kf.o bf.o voice_algo.o
+OBJS = aec_kf.o bf.o voice_algo.o gtcrn.o gtcrn_weights.o
 
-all: libvoice_algo.so libvoice_algo.a test_algo
+all: libvoice_algo.so libvoice_algo.a test_algo test_gtcrn
 
 aec_kf.o: aec_kf.cpp aec_kf.hpp
 	$(CXX) $(CXXFLAGS) -c -o $@ aec_kf.cpp
@@ -28,6 +33,12 @@ bf.o: bf.cpp bf.hpp fft_bf.hpp
 voice_algo.o: voice_algo.cpp voice_algo.h aec_kf.hpp bf.hpp
 	$(CXX) $(CXXFLAGS) -c -o $@ voice_algo.cpp
 
+gtcrn.o: gtcrn.cpp gtcrn.h gtcrn_weights.h
+	$(CXX) $(CXXFLAGS) -c -o $@ gtcrn.cpp
+
+gtcrn_weights.o: gtcrn_weights.c gtcrn_weights.h
+	$(CC) $(CFLAGS) -c -o $@ gtcrn_weights.c
+
 libvoice_algo.so: $(OBJS)
 	$(CXX) $(CXXFLAGS) -shared -o $@ $(OBJS)
 
@@ -37,6 +48,11 @@ libvoice_algo.a: $(OBJS)
 test_algo: test_algo.cpp libvoice_algo.a libvoice_algo.so
 	$(CXX) $(CXXFLAGS) -o $@ test_algo.cpp -L. -lvoice_algo -ldl \
 	    -Wl,-rpath,'$$ORIGIN'
+
+# test_gtcrn 直链源码（非 PIC：-fPIC 寻址开销 ~20%，基准数字要反映真实算力）
+test_gtcrn: test_gtcrn.cpp gtcrn.cpp gtcrn_weights.c gtcrn.h gtcrn_weights.h
+	$(CXX) -std=c++17 -O3 -Wall -Wextra $(NEON) -o $@ test_gtcrn.cpp gtcrn.cpp \
+	    gtcrn_weights.c -lm
 
 test: test_algo
 	./test_algo
@@ -51,7 +67,9 @@ neon-stat:
 	$(CXX) $(BASEFLAGS) -c bf.cpp -o .neoncheck/bf_base.o
 	$(CXX) $(BASEFLAGS) $(NEON) -c voice_algo.cpp -o .neoncheck/voice_algo_neon.o
 	$(CXX) $(BASEFLAGS) -c voice_algo.cpp -o .neoncheck/voice_algo_base.o
-	@for f in aec_kf bf voice_algo; do \
+	$(CXX) $(BASEFLAGS) $(NEON) -c gtcrn.cpp -o .neoncheck/gtcrn_neon.o
+	$(CXX) $(BASEFLAGS) -c gtcrn.cpp -o .neoncheck/gtcrn_base.o
+	@for f in aec_kf bf voice_algo gtcrn; do \
 	  for v in neon base; do \
 	    total=$$(objdump -d .neoncheck/$${f}_$${v}.o \
 	            | grep -oE '\sv[a-z0-9]+(\.[a-z0-9]+)*[[:space:]]' | wc -l | tr -d ' '); \
@@ -63,10 +81,10 @@ neon-stat:
 	  done; \
 	done
 	@echo '--- 抽查（neon 版示例指令）---'
-	@objdump -d .neoncheck/aec_kf_neon.o | grep -E '\sv(ld1|vmla|vfma|vmul|vst1)' | head -8
+	@objdump -d .neoncheck/gtcrn_neon.o | grep -E '\sv(ld1|vmla|vfma|vmul|vst1)' | head -8
 
 clean:
-	rm -f $(OBJS) libvoice_algo.so libvoice_algo.a test_algo
+	rm -f $(OBJS) libvoice_algo.so libvoice_algo.a test_algo test_gtcrn
 	rm -rf .neoncheck
 
 .PHONY: all test neon-stat clean

@@ -44,6 +44,13 @@ aplay -D voice_spk_shm → vshm插件 → /dev/shm/voice_spk(写者槽)
   估计只重求和+搜索）。
 - **DSB/MVDR**：分数延迟对齐平均（主链）；MVDR（STFT+SMI 协方差+对角加载）
   用于定向干扰场景。
+- **GTCRN 降噪**（`gtcrn.{h,cpp}`，ICASSP'24）：23.7K 参数/33 MMACs/s 单通道
+  全因果后置滤波，STFT 512/256（算法延迟 32ms），逐帧状态机 C ABI
+  `va_gtcrn_*`。权重由 `tools/export_gtcrn_weights.py` 从官方 checkpoint
+  导出（BN 折叠/解码 dw 双轴翻转/GRU 双偏置分离），`tools/gtcrn_check_export.py`
+  与 `gtcrn_compare_c.py` 为 numpy/torch 双层对拍基准。板上 RTF ~0.18（冷）
+  / ~0.21（92°C 热节流），输出与官方流式 torch 参考 -48.4dB 一致
+  （跨架构 -83~-105dB）。待接入引擎 DSB 出口（--ns）。
 - **性能优化**（16k 路径）：Hermitian 半谱（AEC 热循环与存储减半）、投影错峰、
   参考静音门控（连续静音 ≥20 块触发，语音期逐位等价）、共享参考谱
   （RefEngine：多通道共用一次参考 FFT）。48k 路径与参考实现逐位一致（回归基线）。
@@ -121,6 +128,8 @@ pcm.voice_spk_shm { type vshm  shm "/dev/shm/voice_spk" }
 | DSB 阵增益 | +6.2 dB（4 麦理论 6.02） |
 | 播放 fill p50 / mic-in 延迟 | 17ms / 40–55ms |
 | 全链 rtf（满频 / 待机） | ~0.5 / 0.40（单核） |
+| GTCRN 降噪 rtf（单核 A7） | ~0.18 冷 / ~0.21 热节流（vs ORT 1.38） |
+| GTCRN 输出 vs torch 流式参考 | -48.4 dB（边界效应内 -80 以下） |
 | ADC↔DAC 时钟偏差 | −0.27 ppm |
 
 ## 8. 待办
@@ -130,3 +139,4 @@ pcm.voice_spk_shm { type vshm  shm "/dev/shm/voice_spk" }
 3. H3 散热方案后启用引擎常驻（无散热长时间满载会过温关机）
 4. VAD：Silero C++ 移植替换特征版
 5. 计算量增量项：DSB float 化、实输入半复 FFT、热循环手工 NEON
+6. GTCRN 接入引擎：DSB 出口后置滤波（`--ns`，512 帧节拍 = 2 GTCRN 帧/拍）

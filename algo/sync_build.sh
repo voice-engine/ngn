@@ -7,7 +7,8 @@ REMOTE=${NGN_HOST:-nanopi}
 RDIR=${NGN_REMOTE:-/home/i/ngn/algo}
 MODE="${1:-all}"
 
-FILES="voice_algo.h voice_algo.cpp aec_kf.hpp aec_kf.cpp bf.hpp bf.cpp fft_bf.hpp test_algo.cpp Makefile"
+FILES="voice_algo.h voice_algo.cpp aec_kf.hpp aec_kf.cpp bf.hpp bf.cpp fft_bf.hpp \
+       gtcrn.h gtcrn.cpp gtcrn_weights.c gtcrn_weights.h test_gtcrn.cpp Makefile"
 
 echo "== 同步 -> $REMOTE:$RDIR"
 ssh "$REMOTE" "mkdir -p $RDIR"

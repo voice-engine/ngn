@@ -8,6 +8,8 @@
 - **AEC** 回声消除（合成 21.9dB / 真实音乐 10–13dB ERLE）
 - **DOA** 定向（真实声源在线 ±3°）
 - **波束成形** DSB 输出，阵增益 6.2dB
+- **降噪** GTCRN（ICASSP'24，23.7K 参数）手工 C+NEON 移植，单 A7 核
+  rtf≈0.18（与官方 torch 参考对拍 -48dB 一致）；引擎接入待办
 - **虚拟声卡** —— 任意 ALSA 应用直接录制处理后的麦克风
   （`arecord -D voice_mic_shm`）、播放自动接入回声参考
   （`aplay -D voice_spk_shm`）

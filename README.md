@@ -9,6 +9,9 @@ It runs as a daemon on the board and provides:
 - **AEC** — echo cancellation (21.9 dB synthetic / 10–13 dB real-music ERLE)
 - **DOA** — direction finding (±3° online on real sources)
 - **Beamforming** — DSB output, 6.2 dB array gain
+- **Noise suppression** — GTCRN (ICASSP'24, 23.7K params) hand-ported C + NEON,
+  rtf ≈ 0.18 on one A7 core (verified bit-parity with the official torch
+  reference); engine integration pending
 - **Virtual sound cards** — any ALSA app can record the processed mic
   (`arecord -D voice_mic_shm`) and play back with automatic echo reference
   (`aplay -D voice_spk_shm`)

@@ -1,7 +1,17 @@
 # 构建产物
-*.o *.a *.so test_algo voice_engine voice_engine_mock
+*.o
+*.a
+*.so
+test_algo
+test_gtcrn
+voice_engine
+voice_engine_mock
 # 测试素材（由 gen_test_wav.py / acoustic 脚本生成）
 *.wav
 # 运行产物
-dumps/ *.log
-.DS_Store __pycache__/
+dumps/
+*.log
+.DS_Store
+__pycache__/
+# GTCRN 权重对拍中间产物（由 export_gtcrn_weights.py 再生）
+algo/gtcrn_weights.npz
