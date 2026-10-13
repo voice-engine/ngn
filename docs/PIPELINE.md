@@ -128,7 +128,7 @@ pcm.voice_spk_shm { type vshm  shm "/dev/shm/voice_spk" }
 | DSB 阵增益 | +6.2 dB（4 麦理论 6.02） |
 | 播放 fill p50 / mic-in 延迟 | 17ms / 40–55ms |
 | 全链 rtf（满频 / 待机） | ~0.5 / 0.40（单核） |
-| GTCRN 降噪 rtf（单核 A7） | ~0.18 冷 / ~0.21 热节流（vs ORT 1.38） |
+| GTCRN 降噪 rtf（单核 A7） | ~0.18 冷 / ~0.21 热节流（ORT 1.38；ncnn GRU 层慢 3.3× 且转换受阻，见 tools/gtcrn_bench） |
 | GTCRN 输出 vs torch 流式参考 | -48.4 dB（边界效应内 -80 以下） |
 | ADC↔DAC 时钟偏差 | −0.27 ppm |
 

@@ -20,7 +20,10 @@
 - **ncnn**：完整模型三条转换链路均受阻——pnnx 生成动态 -233 Slice 静态图无法执行、
   旧 onnx2ncnn 不支持 Unfold/Gather/ConstantOfShape；消除 Unfold/chunk/索引后仍卡
   GRU 前的 Reshape 维度。**部署摩擦大，GRU 型微模型不友好**。
-  GRU 层微基准（33 步 H=4 双向）：Mac 20µs ≈ 手写单向 2.5×。
+  GRU 层微基准（板上 A7 同核同频，33 步）：ncnn H=4 双向 695.6µs vs 手写单向
+  105.2µs（H=8：807µs vs 228.7µs）→ **ncnn GRU 慢 ~3.3×**（无 NEON 化的朴素
+  gemm 循环 + 层开销）。按此推算整模型 RTF ≈ 0.35–0.4（若能转换跑通），
+  介于 ORT 与手写之间。
 - **手写 C**（采用）：板上 RTF ~0.18（冷），输出与 torch 流式参考 -48.4dB。
 
 ## 板上编译 ncnn（对照用）
