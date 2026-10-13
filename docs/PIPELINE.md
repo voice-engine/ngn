@@ -88,7 +88,8 @@ float       va_doa_bf_get_doa(const va_doa_bf*);
 - 性能：全链 rtf 满频 ~0.5、待机 0.40（静音门控）；单核（核 3 空闲）。
 - CLI：`--ipc {shm,fifo}`、`--device <pcm>`（失败自动回退 null）、
   `--mic-order 0,3,2,1`、`--simulate-capture <wav>`（无声联调）、
-  `--dump-mix`、`--stats-interval N`。
+  `--dump-mix`、`--stats-interval N`、`--ns`（GTCRN 后置降噪，+32ms）。
+  dump：`VA_DUMP_MIC/REF/AEC/BF/NS=1`。
 - 诊断 dump：`VA_DUMP_MIC/REF/AEC/BF=1` → 自动落 `./dumps/`（成对时间戳，
   `VA_DUMP_DIR`/`VA_DUMP_MAX_MB` 可配，默认 500MB 轮转）。
 

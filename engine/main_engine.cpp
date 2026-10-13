@@ -64,6 +64,7 @@
 #define VA_ALGO_DESC "mock-stubs"
 #else
 #include <voice_algo.h>
+#include <gtcrn.h>
 #define VA_ALGO_DESC "libvoice_algo"
 #endif
 
@@ -98,6 +99,7 @@ struct Config {
     const char* shm_spk_path   = "/dev/shm/voice_spk";
     const char* dump_mix       = nullptr;          // --dump-mix：回采/混音结果（48k mono S16）落盘 wav
     int         stats_interval = 5;                // 秒；<=0 关闭
+    bool        ns             = false;            // --ns：BF 出口后接 GTCRN 降噪（+32ms 延迟）
     // 位置k←通道ch 映射（DOA/BF 导向用）。自然序 {0,1,2,3}；本板实测 {0,3,2,1}
     // （analyze_geometry.py 三方法互验 2026-10-06）。--mic-order 0,3,2,1 覆盖。
     int         mic_order[kNChan] = {0, 1, 2, 3};
@@ -841,11 +843,15 @@ static void dump_rotate(const char* skip1, const char* skip2) {
 //   共享参考谱：4 实例同 ref，x FFT/谱环/|X|² 表只算一次（RefEngine 服务），
 //   与每实例独立 FFT 输出逐位一致（test_algo 固化）。
 // ----------------------------------------------------------------------------
+struct Config;   // 定义在下方（Algo::init 引用 g_cfg.ns，前向声明）
+static Config g_cfg;
+
 struct Algo {
     // 句柄类型取自真库头；va_mock.h 已同步声明相同 typedef（mock 可继续编译）
     va_aec_ref* refsvc = nullptr;
     va_aec* aec[kNChan] = {};
     va_doa_bf* bf = nullptr;
+    va_gtcrn* ns = nullptr;   // --ns：BF 出口后置 GTCRN（16k，512 帧节拍 = 2 GTCRN 帧）
     bool init() {
         refsvc = va_aec_ref_create(kRateEng);
         if (!refsvc) return false;
@@ -854,12 +860,15 @@ struct Algo {
             if (!aec[c]) return false;
         }
         bf = va_doa_bf_create(kNChan, kRateEng, "ula", kMicSpacing);
-        return bf != nullptr;
+        if (!bf) return false;
+        if (g_cfg.ns) { ns = va_gtcrn_create(); if (!ns) return false; }
+        return true;
     }
     void deinit() {
         for (int c = 0; c < kNChan; c++) if (aec[c]) va_aec_destroy(aec[c]);
         if (refsvc) va_aec_ref_destroy(refsvc);
         if (bf) va_doa_bf_destroy(bf);
+        if (ns) va_gtcrn_destroy(ns);
     }
 };
 
@@ -885,7 +894,6 @@ static int pcm_hw_setup(snd_pcm_t* pcm, snd_pcm_format_t fmt, int nch, int rate,
 static Algo      g_algo;
 static FrameRing g_cap_ring(kRateEng * 4 * 4); // 采集 → 管线：~4s
 static FloatRing g_ref_ring(kRateEng * 5);     // 回采 → 管线：~5s
-static Config    g_cfg;
 static FifoWriter g_mic_fifo;
 static PolyDecim3 g_ref_decim;
 static ShmMic    g_mic_shm;                    // shm 模式：mic 环写者（单写多读，shm_voice.h）
@@ -1090,8 +1098,10 @@ static void* pipeline_thread(void* /*arg*/) {
     FILE* mic_dump = mic_dump_path.empty() ? nullptr : fopen(mic_dump_path.c_str(), "wb");
     const std::string aec_dump_path = dump_target(getenv("VA_DUMP_AEC"), "aec");
     const std::string bf_dump_path = dump_target(getenv("VA_DUMP_BF"), "bf");
+    const std::string ns_dump_path = dump_target(getenv("VA_DUMP_NS"), "ns");
     FILE* aec_dump = aec_dump_path.empty() ? nullptr : fopen(aec_dump_path.c_str(), "wb");
     FILE* bf_dump = bf_dump_path.empty() ? nullptr : fopen(bf_dump_path.c_str(), "wb");
+    FILE* ns_dump = ns_dump_path.empty() ? nullptr : fopen(ns_dump_path.c_str(), "wb");
     if (ref_dump || mic_dump) {
         dump_rotate(ref_dump_path.c_str(), mic_dump_path.c_str());
         fprintf(stderr, "[dump] ref=%s mic=%s\n",
@@ -1195,6 +1205,12 @@ static void* pipeline_thread(void* /*arg*/) {
                 fwrite(outm[c], sizeof(float), kBlock, aec_dump);
         va_doa_bf_process(g_algo.bf, bf_in, mono, kBlock);
         if (bf_dump) fwrite(mono, sizeof(float), kBlock, bf_dump);
+        if (g_algo.ns) {   // GTCRN 后置降噪（双缓冲；kBlock=512 = 2 个 GTCRN 帧）
+            float nsbuf[kBlock];
+            va_gtcrn_process(g_algo.ns, mono, nsbuf, kBlock);
+            memcpy(mono, nsbuf, sizeof(float) * kBlock);
+            if (ns_dump) fwrite(mono, sizeof(float), kBlock, ns_dump);
+        }
         g_stats.doa_latest.store(va_doa_bf_get_doa(g_algo.bf), std::memory_order_relaxed);
         for (int i = 0; i < kBlock; i++) {
             float v = mono[i];
@@ -1287,6 +1303,7 @@ static void* pipeline_thread(void* /*arg*/) {
     if (mic_dump) { fclose(mic_dump); fprintf(stderr, "[dump] mic 已落盘 %s\n", mic_dump_path.c_str()); }
     if (aec_dump) { fclose(aec_dump); fprintf(stderr, "[dump] aec 已落盘 %s\n", aec_dump_path.c_str()); }
     if (bf_dump) { fclose(bf_dump); fprintf(stderr, "[dump] bf 已落盘 %s\n", bf_dump_path.c_str()); }
+    if (ns_dump) { fclose(ns_dump); fprintf(stderr, "[dump] ns 已落盘 %s\n", ns_dump_path.c_str()); }
     return nullptr;
 }
 
@@ -1569,6 +1586,7 @@ static void usage(const char* p) {
         "voice-engine (%s) — NanoPi Air 4-mic AC108 守护进程\n"
         "用法: %s [选项]\n"
         "  --simulate-capture <4ch16k.wav>  跳过硬件采集，从 WAV 循环、实时节奏读入\n"
+        "  --ns                              BF 出口后接 GTCRN 降噪（延迟 +32ms）\n"
         "  --capture-fs <16k|48k>           ADC 采样率（默认 16k：32k 线上流剥 tag 直出，无软件抽取；\n"
         "                                   48k 为旧路径：96k 线上流 → ÷3 抽取。配方分别用\n"
         "                                   ~/ac108/mic4-record16.sh cfg / mic4-record.sh）\n"
@@ -1613,6 +1631,7 @@ int main(int argc, char** argv) {
             else { fprintf(stderr, "--ipc 只接受 shm 或 fifo（得到 %s）\n", v); return 2; }
         }
         else if (!strcmp(argv[i], "--dump-mix")) g_cfg.dump_mix = next("--dump-mix");
+        else if (!strcmp(argv[i], "--ns")) g_cfg.ns = true;
         else if (!strcmp(argv[i], "--mic-order")) {
             const char* v = next("--mic-order");
             int a = -1, b = -1, c = -1, d = -1;

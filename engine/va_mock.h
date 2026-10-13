@@ -42,6 +42,13 @@ void    va_doa_bf_destroy(va_doa_bf*);
 int     va_doa_bf_process(va_doa_bf*, const float* const* in, float* out, int n);
 float   va_doa_bf_get_doa(const va_doa_bf*);
 
+// GTCRN 降噪桩：out = x 直通（与真库 gtcrn.h ABI 对齐）
+typedef struct va_gtcrn va_gtcrn;
+va_gtcrn* va_gtcrn_create(void);
+void      va_gtcrn_destroy(va_gtcrn*);
+void      va_gtcrn_reset(va_gtcrn*);
+int       va_gtcrn_process(va_gtcrn*, const float* x, float* y, int n);
+
 #ifdef __cplusplus
 }
 #endif

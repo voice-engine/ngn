@@ -75,4 +75,14 @@ float va_doa_bf_get_doa(const va_doa_bf* /*bf*/) { return 0.0f; }
 
 void va_doa_bf_destroy(va_doa_bf* bf) { delete bf; }
 
+struct va_gtcrn { int dummy; };
+va_gtcrn* va_gtcrn_create(void) { return new va_gtcrn(); }
+void va_gtcrn_destroy(va_gtcrn* g) { delete g; }
+void va_gtcrn_reset(va_gtcrn*) {}
+int va_gtcrn_process(va_gtcrn*, const float* x, float* y, int n) {
+    if (!x || !y || n <= 0) return -1;
+    if (x != y) memcpy(y, x, (size_t)n * sizeof(float));
+    return n / 256;
+}
+
 } // extern "C"
